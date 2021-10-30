@@ -29,25 +29,21 @@ The script expects a file from the **imgs** directory.
 To run the Hillclimber algorithm for the Mona Lisa use:
  
 ```
-python3 new_HC.py mona.png
+python3 HC.py mona.png
 ```
 To run the Simulated annealing algorithm for the Starry night use:
  
 ```
-python3 new_SA.py starrynight.png
+python3 SA.py starrynight.png
 ```
  
 To run the plant propagation algorithm for the painting of Salvador Dalí use:
  
 ```
-python3 new_PPA.py dali.png
+python3 PPA.py dali.png
 ```
  
 All results are stored in output_dir per painting.
  
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
- 
-Please make sure to update tests as appropriate.
  
 
