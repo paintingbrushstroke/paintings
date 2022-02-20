@@ -21,7 +21,7 @@ class Painting:
         self.minSize = 0.1
         self.maxSize = 0.7
         self.brushSide = 300  # brush image resolution in pixels
-        self.padding = int(self.brushSide*self.maxSize / 2 + 5)
+        self.padding = int(self.brushSide*self.maxSize / 2 + 25)
 
         # Strokes and current painting
         self.strokes = []
@@ -163,6 +163,7 @@ class Painting:
         color = stroke.color
         posX = int(stroke.posX) + self.padding  # add padding since indices have shifted
         posY = int(stroke.posY) + self.padding
+        # print(str(posX) + " " + str(posY))
         size = stroke.size
         rotation = stroke.rotation
         brushNumber = int(stroke.brush_type)
@@ -247,17 +248,17 @@ class Brush_stroke:
 
     # generate new brush positions for the brush
     def gen_new_positions(self, bound):
-        posY = int(random.randrange(0, bound[0]))
-        posX = int(random.randrange(0, bound[1]))
+        posX = int(random.randrange(0, bound[0]))
+        posY = int(random.randrange(0, bound[1]))
         return [posY, posX]
 
     def mut_color(self, color, mutationStrength):
         new_color = color
         mu = 0
         sigma = mutationStrength * 255
-        new_color[0] += np.random.normal(mu, sigma)
-        new_color[1] += np.random.normal(mu, sigma)
-        new_color[2] += np.random.normal(mu, sigma)
+        new_color[0] += math.ceil(np.random.normal(mu, sigma))
+        new_color[1] += math.ceil(np.random.normal(mu, sigma))
+        new_color[2] += math.ceil(np.random.normal(mu, sigma))
         if new_color[0] < 0:
             new_color[0] = 0
         if new_color[1] < 0:
