@@ -213,12 +213,6 @@ class Painting:
 
         return inImg
 
-    def __rotateImg(self, img, angle):
-        rows,cols,channels = img.shape
-        M = cv2.getRotationMatrix2D((cols/2,rows/2),angle,1)
-        dst = cv2.warpAffine(img,M,(cols,rows))
-        return dst
-
 class Brush_stroke:
 
     def __init__(self, index):

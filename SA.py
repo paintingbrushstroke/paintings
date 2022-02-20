@@ -54,6 +54,7 @@ def simulated_annealing(painting, evaluations, filename):
             # pickle.dump( painting, open( "output_dir/" + filename + "/SA-" + str(len(painting.strokes)) + "-"+ today+ "-" + str(i) +".p", "wb" ) )
         if i%1000 == 0:
             painting.canvas_memory.save("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
+            # cv2.imwrite("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png" , painting.canvas_memory)
 
     # Final image
     # pickle.dump( painting, open( "output_dir/" + filename + "/SA-" + str(len(painting.strokes)) + "-"+ today+ "-final.p", "wb" ) )
@@ -112,14 +113,14 @@ if __name__ == "__main__":
 
     strokeCount = 125
     evaluations = 100000
-    mutationStrength = 0.2
+    mutationStrength = 0.1
 
     for j in range(1):
         canvas = Painting(imagePath, False, mutationStrength)
         canvas.init_strokes(strokeCount)
         strokes = canvas.strokes
 
-        oldMutation = True
+        oldMutation = False
         canvas = Painting(imagePath, oldMutation, mutationStrength)
         canvas.init_strokes(strokeCount)
         canvas.strokes = strokes
