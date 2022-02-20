@@ -1,36 +1,38 @@
 import cv2
-import numpy as np
-from Colour_Painting import *
+from Colour_Painting_Pillow import *
 import math
 from random import random
 import copy
 import time
 from collections import Counter
-from datetime import date
 import sys
 import pickle
 import argparse
 import glob
 from datetime import datetime
 
-def initPopulation(populationSize, strokeCount, imagePath):
+
+def initPopulation(populationSize, strokeCount, imagePath, mutationStrength, oldMutation):
     # initilize population
     population = []
+    initStrokes = []
     for i in range(populationSize):
-        individual = Painting(imagePath)
+        individual = Painting(imagePath, oldMutation, mutationStrength)
         individual.init_strokes(strokeCount)
+        initStrokes.append(individual.strokes)
 
         population.append(individual)
 
-    return population
+    return population, initStrokes
+
 
 def calcPopulationMSE(population, evalCount):
-     # calculate MSE for the entire population
+    # calculate MSE for the entire population
     minMSE = 1000000000
     maxMSE = 0
     outputGif = False
     for individual in population:
-        if individual.MSE_calced == False:
+        if individual.MSE_calced is False:
             error, image = individual.calcError(individual.strokes)
             individual.current_error = error
             individual.canvas_memory = image
@@ -41,12 +43,14 @@ def calcPopulationMSE(population, evalCount):
                 outputGif = True
             evalCount = evalCount + 1
 
-
         # find min and max MSE to calculate fitness
-        if minMSE > individual.current_error: minMSE = individual.current_error
-        if maxMSE < individual.current_error: maxMSE = individual.current_error
-    
+        if minMSE > individual.current_error:
+            minMSE = individual.current_error
+        if maxMSE < individual.current_error:
+            maxMSE = individual.current_error
+
     return (minMSE, maxMSE, evalCount, outputGif)
+
 
 def calcPopulationFitness(population, minMSE, maxMSE):
     # calulate fitness for entire population. Also keep track of all fitness scores per index for sorting later
@@ -56,9 +60,10 @@ def calcPopulationFitness(population, minMSE, maxMSE):
         individual.fitness = fitness
         fitnessList.append((idx, fitness))
 
-        # also calculate normalized fitness 
+        # also calculate normalized fitness
         individual.norm_fitness = 0.5 * (math.tanh(4*fitness-2)+1)
     return fitnessList
+
 
 def sortPopulation(population, fitnessList, populationSize):
     # Sort list by fitness score
@@ -67,19 +72,19 @@ def sortPopulation(population, fitnessList, populationSize):
     sortedPopulation = []
 
     # loop over the sorted fitness list and extract the correct indiviual from the population to sort the population
-    for idx , _ in sortedFitnessList:
+    for idx, _ in sortedFitnessList:
         # Add one to cycle alive count, to see how long the best indiviual stays alive
-        population[idx].cycles_alive = population[idx].cycles_alive + 1 
+        population[idx].cycles_alive = population[idx].cycles_alive + 1
         sortedPopulation.append(population[idx])
-
 
     # set the sorted population as the true population and return the population to its original size.
     return sortedPopulation[:populationSize]
 
+
 def Sort(list):
-  
-    list.sort(reverse=True, key = lambda x: x[1])
+    list.sort(reverse=True, key=lambda x: x[1])
     return list
+
 
 def generateOffspring(population, maxOffspring):
     # generate offspring per indidivual of the population
@@ -87,13 +92,13 @@ def generateOffspring(population, maxOffspring):
     for individual in population:
         offSpringCount = math.ceil(maxOffspring * individual.norm_fitness * random())
         mutationCount = math.ceil(100 * (1/maxOffspring) * (1-individual.norm_fitness) * random())
-       
-        # generate x amount of childs based on the offspring count        
+
+        # generate x amount of childs based on the offspring count
         for offspring in range(offSpringCount):
-            # copy the parent 
+            # copy the parent
             newChild = copy.deepcopy(individual)
 
-            # # make sure that after the mutations the MSE is recalculated
+            # make sure that after the mutations the MSE is recalculated
             newChild.MSE_calced = False
             newChild.cycles_alive = 0
             newChild.mutateCount = mutationCount
@@ -105,6 +110,7 @@ def generateOffspring(population, maxOffspring):
 
     return childs
 
+
 def strokeAnalyze(individual):
     strokeTypes = []
     for stroke in individual.strokes:
@@ -113,8 +119,8 @@ def strokeAnalyze(individual):
 
     return countedStrokes
 
-def writeTolog(f, evalCount, error, offSpringCount, countedStrokes, mutateCount, cycles_alive):
 
+def writeTolog(f, evalCount, error, offSpringCount, countedStrokes, mutateCount, cycles_alive):
     t = time.localtime()
     t = time.strftime("%H:%M:%S", t)
     # Add evaluations
@@ -127,61 +133,79 @@ def writeTolog(f, evalCount, error, offSpringCount, countedStrokes, mutateCount,
 
     f.write(log + "\n")
 
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('argfilename', metavar='N', nargs='+',
-                    help='painting name')
+                        help='painting name')
     args = parser.parse_args()
 
-   
     print("start PPA")
 
-    # setup parameters 
+    # setup parameters
     populationSize = 30
     filename = str(args.argfilename[0])
     imagePath = "imgs/" + filename
 
-    strokeCount = 250
+    try:
+        os.mkdir("output_dir")
+    except Exception:
+        print("Dir exists")
+    try:
+        os.mkdir("output_dir/"+filename)
+    except Exception:
+        print("Dir exists")
+
+    strokeCount = 100
     maxOffspring = 5
-    evaluations = 1000000
+    evaluations = 10000
 
-    population = initPopulation(populationSize, strokeCount, imagePath)
+    mutationStrength = 0.2
 
-    now = datetime.now()
-    dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
-    today = str(dt_string)
-    
-    evalCount = 0
-    logger  = "output_dir/"+ filename + "/log-PPA-" + str(strokeCount) + "-" + str(evaluations) + "-" + today
-    logger = logger + "-v" + str(len(glob.glob(logger)))   
-    f = open(logger, "w")
-    while evalCount < evaluations:
+    for i in range(2):
+        if i == 0:
+            oldMutation = True
+            firstPop, initStrokes = initPopulation(populationSize, strokeCount, imagePath, mutationStrength, oldMutation)
+        else:
+            oldMutation = False
+            firstPop, strokes = initPopulation(populationSize, strokeCount, imagePath, mutationStrength, oldMutation)
+            for p in range(len(firstPop)):
+                firstPop[p].strokes = initStrokes[p]
+        now = datetime.now()
+        dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
+        today = str(dt_string)
 
-        start = time.time()
+        population = firstPop
+        evalCount = 0
+        logger = "output_dir/"+ filename + "/log-PPA-" + str(strokeCount) + "-" + str(evaluations) + "-" + today
+        logger = logger + "-v" + str(len(glob.glob(logger)))
+        f = open(logger, "w")
+        while evalCount < evaluations:
 
-        # calculations
-        minMSE, maxMSE, evalCount, outputPickle = calcPopulationMSE(population, evalCount)
-        fitnessList = calcPopulationFitness(population, minMSE, maxMSE)
-        
-        # population operations
-        population = sortPopulation(population, fitnessList, populationSize)
-        offspring = generateOffspring(population, maxOffspring)
-        population = population + offspring   
+            start = time.time()
 
-        # loggingx
-        countedStrokes = strokeAnalyze(population[0])
-        writeTolog(f, evalCount, population[0].current_error, len(offspring), countedStrokes, population[0].mutateCount, population[0].cycles_alive )
+            # calculations
+            minMSE, maxMSE, evalCount, outputPickle = calcPopulationMSE(population, evalCount)
+            fitnessList = calcPopulationFitness(population, minMSE, maxMSE)
 
-        if outputPickle:
-            pickle.dump( population[0], open( "output_dir/" + filename + "/population-" + str(strokeCount) + "-"+ today+ "-" + str(evalCount) +".p", "wb" ) )
+            # population operations
+            population = sortPopulation(population, fitnessList, populationSize)
+            offspring = generateOffspring(population, maxOffspring)
+            population = population + offspring
 
-        end = time.time()
-        print(evalCount, population[0].current_error, len(offspring), "Full duration " + str(end - start))
+            # loggingx
+            countedStrokes = strokeAnalyze(population[0])
+            writeTolog(f, evalCount, population[0].current_error, len(offspring), countedStrokes, population[0].mutateCount, population[0].cycles_alive)
 
-        f.flush()
-        sys.stdout.flush()
+            if outputPickle:
+                pickle.dump(population[0], open("output_dir/" + filename + "/population-" + str(strokeCount) + "-"+ today+ "-" + str(evalCount) +".p", "wb"))
 
-    
-    cv2.imwrite("output_dir/"+ filename +"/PPA-final-" + str(strokeCount) + "-" + today + ".png" , population[0].canvas_memory)
-    pickle.dump( population[0], open( "output_dir/" + filename + "/population-" + str(strokeCount) + "-"+ today+ "-final.p", "wb" ) )
+            end = time.time()
+            print(evalCount, population[0].current_error, len(offspring), "Full duration " + str(end - start))
+            painting.canvas_memory.save("output_dir/"+ filename +"/PPA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
+            f.flush()
+            sys.stdout.flush()
+
+        painting.canvas_memory.save("output_dir/"+ filename +"/PPA-final-" + str(strokeCount) + "-" + today + ".png", "PNG")
+        # pickle.dump(population[0], open("output_dir/" + filename + "/population-" + str(strokeCount) + "-"+ today+ "-final.p", "wb"))
