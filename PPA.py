@@ -203,9 +203,9 @@ if __name__ == "__main__":
 
             end = time.time()
             print(evalCount, population[0].current_error, len(offspring), "Full duration " + str(end - start))
-            painting.canvas_memory.save("output_dir/"+ filename +"/PPA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
+            population[0].canvas_memory.save("output_dir/"+ filename +"/PPA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
             f.flush()
             sys.stdout.flush()
 
-        painting.canvas_memory.save("output_dir/"+ filename +"/PPA-final-" + str(strokeCount) + "-" + today + ".png", "PNG")
+        population[0].canvas_memory.save("output_dir/"+ filename +"/PPA-final-" + str(strokeCount) + "-" + today + ".png", "PNG")
         # pickle.dump(population[0], open("output_dir/" + filename + "/population-" + str(strokeCount) + "-"+ today+ "-final.p", "wb"))

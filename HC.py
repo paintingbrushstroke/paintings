@@ -5,6 +5,7 @@ import pickle
 import sys
 import cv2
 import time
+from datetime import datetime
 
 
 def hillclimber(painting, evaluations, filename):
