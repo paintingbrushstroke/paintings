@@ -10,6 +10,7 @@ import argparse
 import glob
 from datetime import datetime
 
+from colorthief import ColorThief
 
 def initPopulation(populationSize, strokeCount, imagePath, mutationStrength):
     # initialize population
@@ -18,10 +19,10 @@ def initPopulation(populationSize, strokeCount, imagePath, mutationStrength):
     for i in range(populationSize):
         individual = Painting(imagePath, False, mutationStrength)
         individual.init_strokes(strokeCount)
-        initStrokes.append(individual.strokes)
+        # initStrokes.append(individual.strokes)
         population.append(individual)
 
-    return population, initStrokes
+    return population
 
 
 def calcPopulationMSEPAR(population):
@@ -109,6 +110,12 @@ def generateOffspring(parents, errors, recombinationThreshold):
 
     return children
 
+def assignColor(population, palette):
+    for i in range(len(population)):
+        for j in range(len(population[i].strokes)):
+            population[i].strokes[j].color = list(palette[j])
+
+    return population
 
 def strokeAnalyze(individual):
     strokeTypes = []
@@ -152,10 +159,10 @@ if __name__ == "__main__":
         print("Dir exists")
 
     populationSize = 32
-    strokeCount = 50
+    strokeCount = 125
     evaluations = 100000
     mutationStrength = 0.1
-    recombinationThreshold = 0.8
+    recombinationThreshold = 0.6
 
     nGenerations = math.ceil(evaluations/populationSize) - 1  # Subtract one for initial population
     print("Number of generations: " + str(nGenerations))
@@ -168,11 +175,14 @@ if __name__ == "__main__":
     logger = logger + "-v" + str(len(glob.glob(logger)))
     f = open(logger, "w")
 
-    population, initStrokes = initPopulation(populationSize, strokeCount, imagePath, mutationStrength)
+    color_thief = ColorThief(imagePath)
+    palette = color_thief.get_palette(color_count=strokeCount+1)
+    population = initPopulation(populationSize, strokeCount, imagePath, mutationStrength)
+    population = assignColor(population, palette)
     for i in range(nGenerations):
         # Get fitness
         errors, population = calcPopulationMSE(population)
-        # print(errors)
+
         # Sort population
         sorted = np.argsort(errors)
         population = np.take(population, sorted)
