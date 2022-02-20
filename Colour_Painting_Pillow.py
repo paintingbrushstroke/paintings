@@ -20,8 +20,8 @@ class Painting:
         self.bound = self.img_grey.size
         self.minSize = 0.1
         self.maxSize = 0.7
-        self.brushSide = 300  # brush image resolution in pixels
-        self.padding = int(self.brushSide*self.maxSize / 2 + 25)
+        self.brushSize = 300  # brush image resolution in pixels
+        self.padding = int(self.brushSize*self.maxSize / 2 + 200)
 
         # Strokes and current painting
         self.strokes = []
@@ -46,7 +46,7 @@ class Painting:
     # Initialize the random brush strokes for a stroke count
     def init_strokes(self, stroke_count):
         for index in range(0, stroke_count):
-            brush = Brush_stroke(index)
+            brush = Brush_stroke()
             brush.randomAttributes(self.minSize, self.maxSize, self.maxBrushNumber, self.bound)
             self.strokes.append(brush)
 
@@ -79,22 +79,20 @@ class Painting:
     def mutate(self):
         # copy strokes and stroke object to make reverting possible
         copyStrokes = copy.deepcopy(self.strokes)
-        mutatedStroke = random.choice(copyStrokes)
+        # mutatedStroke = random.choice(copyStrokes)
+        strokeID = random.randrange(0, len(copyStrokes))
+        mutatedStroke = copyStrokes[strokeID]
 
         options = [0,1,2,3,4,5]
         mutateOption = random.choice(options)
         # swap index with other brush
         if mutateOption == 0:
             # remove swapped brushStroke form strokes
-            copyStrokes.pop(mutatedStroke.index)
+            copyStrokes.pop(strokeID)
 
             # select random number for the insert
             insertIndex = int(random.randrange(0, len(copyStrokes)))
             copyStrokes.insert(insertIndex, mutatedStroke)
-
-            # fix all indeces
-            for i in range(0, len(copyStrokes)):
-                copyStrokes[i].index = i
 
         # mutate color
         elif mutateOption == 1:
@@ -111,9 +109,9 @@ class Painting:
         # mutate position
         elif mutateOption == 3:
             if self.oldMutation:
-                mutatedStroke.posY, mutatedStroke.posX = mutatedStroke.gen_new_positions(self.bound)
+                mutatedStroke.posX, mutatedStroke.posY = mutatedStroke.gen_new_positions(self.bound)
             else:
-                mutatedStroke.posY, mutatedStroke.posX = mutatedStroke.mut_positions(self.bound, [mutatedStroke.posY, mutatedStroke.posX], self.mutationStrength)
+                mutatedStroke.posX, mutatedStroke.posY = mutatedStroke.mut_positions(self.bound, self.padding, [mutatedStroke.posY, mutatedStroke.posX], self.mutationStrength, mutatedStroke.size)
         # mutate rotation
         elif mutateOption == 4:
             if self.oldMutation:
@@ -161,8 +159,9 @@ class Painting:
     def __drawStroke(self, stroke, inImg):
         # get stroke data
         color = stroke.color
-        posX = int(stroke.posX) + self.padding  # add padding since indices have shifted
-        posY = int(stroke.posY) + self.padding
+        padding = self.padding # int(self.padding*stroke.size / 2 + 5)
+        posX = int(stroke.posX) + padding  # add padding since indices have shifted
+        posY = int(stroke.posY) + padding
         # print(str(posX) + " " + str(posY))
         size = stroke.size
         rotation = stroke.rotation
@@ -203,9 +202,11 @@ class Painting:
         except(Exception):
             print('------ \n', 'in image ',inImg.size)
             print('pivot: ', posY, posX)
-            print('brush size: ', self.brushSide)
+            print('brush size: ', self.brushSize)
             print('brush shape: ', brushImg.size)
-            # print(" Y range: ", rangeY, 'X range: ', rangeX)
+            rangeX = x_max - x_min
+            rangeY = y_max - y_min
+            print(" Y range: ", rangeY, 'X range: ', rangeX)
             # print('bg coord: ', posY, posY+rangeY, posX, posX+rangeX)
             print('fg: ', foreground.size)
             print('bg: ', background.size)
@@ -215,9 +216,8 @@ class Painting:
 
 class Brush_stroke:
 
-    def __init__(self, index):
+    def __init__(self):
 
-        self.index = index
         self.color = [0,0,0]
         self.size = 0
         self.posY, self.posX = [0,0]
@@ -240,11 +240,11 @@ class Brush_stroke:
         new_brush_type = random.randrange(1, maxBrushNumber)
         return new_brush_type
 
-    # generate new brush positions for the brush
     def gen_new_positions(self, bound):
-        posX = int(random.randrange(0, bound[0]))
-        posY = int(random.randrange(0, bound[1]))
-        return [posY, posX]
+        # generate new brush positions for the brush
+        posX = random.randint(0, bound[0])
+        posY = random.randint(0, bound[1])
+        return [posX, posY]
 
     def mut_color(self, color, mutationStrength):
         new_color = color
@@ -283,34 +283,31 @@ class Brush_stroke:
         sigma = mutationStrength * 360
         mutation = np.random.normal(mu, sigma)
         rotation += mutation
-        if rotation < -180:
-            rotation = -180
-        if rotation > 180:
-            rotation = 180
         return rotation
 
     def mut_brush_type(self, maxBrushNumber):
         new_brush_type = random.randrange(1, maxBrushNumber)
         return new_brush_type
 
-    def mut_positions(self, bound, position, mutationStrength):
+    def mut_positions(self, bound, padding, position, mutationStrength, thisSize):
         mu = 0
         position[0] = position[0]+np.random.normal(mu, mutationStrength * bound[0])
         position[1] = position[1]+np.random.normal(mu, mutationStrength * bound[1])
-        if position[0] < 0:
-            position[0] = 0
-        if position[1] < 0:
-            position[1] = 0
-        if position[0] > bound[0]:
-            position[0] = bound[0]
-        if position[1] > bound[1]:
-            position[1] = bound[1]
+        extrapadding = 100
+        if position[0] < -extrapadding:
+            position[0] = bound[0]+extrapadding
+        elif position[0] > bound[0]+extrapadding:
+            position[0] = -extrapadding
+        if position[1] < -extrapadding:
+            position[1] = bound[1]+extrapadding
+        elif position[1] > bound[1]+extrapadding:
+            position[1] = -extrapadding
         return position
 
     def randomAttributes(self, minSize, maxSize, maxBrushNumber, bound):
         self.color = self.new_color()
         self.size = self.new_size(minSize, maxSize)
-        self.posY, self.posX = self.gen_new_positions(bound)
+        self.posX, self.posY = self.gen_new_positions(bound)
         self.rotation = self.new_rotation()
         self.brush_type = self.new_brush_type(maxBrushNumber)
 

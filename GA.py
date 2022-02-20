@@ -1,6 +1,6 @@
 from Colour_Painting_Pillow import *
 import math
-from random import random
+import random
 import copy
 import time
 from collections import Counter
@@ -33,7 +33,7 @@ def calcPopulationMSEPAR(population):
         errors.append(error)
         imgs.append(img)
         population[i].current_error = errors[i]
-        population[i].current_pheno = imgs[i]
+        population[i].current_pheno = img
 
     process_list = []
     nProc = 4
@@ -82,14 +82,28 @@ def Sort(list):
     return list
 
 
-def generateOffspring(parents):
+def generateOffspring(parents, errors, recombinationThreshold):
     # generate offspring per indidivual of the population
     children = []
-    offSpringCount = len(parents) - 1
-
+    offSpringCount = int(len(parents)/2) - 1
     for offspring in range(offSpringCount):
-        # copy the parent, no fitness based selection  here yet
-        newChild = copy.deepcopy(parents[offspring])
+        # Recombination
+        parentA = copy.deepcopy(parents[offspring])
+        parentB = copy.deepcopy(parents[offspring+offSpringCount])
+        errorA = errors[offspring]
+        errorB = errors[offspring+offSpringCount]
+        newChild = copy.deepcopy(parentA)
+        for strokeID in range(len(parentA.strokes)):
+            randNr = random.uniform(0.0, 1.0)
+            if randNr < recombinationThreshold and errorA < errorB:
+                selectGene = parentA.strokes[strokeID]
+            elif randNr > recombinationThreshold and errorA > errorB:
+                selectGene = parentA.strokes[strokeID]
+            else:
+                selectGene = parentB.strokes[strokeID]
+            newChild.strokes[strokeID] = selectGene
+
+        # Mutation
         newChild.strokes = newChild.mutate()
         children.append(newChild)
 
@@ -105,16 +119,12 @@ def strokeAnalyze(individual):
     return countedStrokes
 
 
-def writeTolog(f, evalCount, error, offSpringCount, countedStrokes, mutateCount, cycles_alive):
+def writeTolog(f, evalCount, error):
     t = time.localtime()
     t = time.strftime("%H:%M:%S", t)
     # Add evaluations
     log = str(t) + "," + str(evalCount)
     log = log + "," + str(error)
-    log = log + "," + str(offSpringCount)
-    log = log + "," + str(countedStrokes[1]) + "," + str(countedStrokes[2]) + "," + str(countedStrokes[3]) + "," + str(countedStrokes[4])
-    log = log + "," + str(mutateCount)
-    log = log + "," + str(cycles_alive)
 
     f.write(log + "\n")
 
@@ -141,10 +151,11 @@ if __name__ == "__main__":
     except Exception:
         print("Dir exists")
 
-    populationSize = 25
-    strokeCount = 125
-    evaluations = 10000
+    populationSize = 32
+    strokeCount = 50
+    evaluations = 100000
     mutationStrength = 0.1
+    recombinationThreshold = 0.8
 
     nGenerations = math.ceil(evaluations/populationSize) - 1  # Subtract one for initial population
     print("Number of generations: " + str(nGenerations))
@@ -152,6 +163,10 @@ if __name__ == "__main__":
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
     today = str(dt_string)
+
+    logger = "output_dir/"+ filename + "/log-GA-" + str(strokeCount) + "-" + str(populationSize) + "-" + today
+    logger = logger + "-v" + str(len(glob.glob(logger)))
+    f = open(logger, "w")
 
     population, initStrokes = initPopulation(populationSize, strokeCount, imagePath, mutationStrength)
     for i in range(nGenerations):
@@ -166,12 +181,14 @@ if __name__ == "__main__":
         # Elitism
         newpopulation = []
         newpopulation.append(population[0])
-        print("# Evals: " + str(i*populationSize) + " - Gen: " + str(i) + " - Best fitness: " + str(errors[0]))
-        population[0].current_pheno.save("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
+        if i%5 == 0:
+            print("# Evals: " + str(i*populationSize) + " - Gen: " + str(i) + " - Best fitness: " + str(errors[0]))
+            population[0].current_pheno.save("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
+            # cv2.imwrite("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", population[0].current_pheno)
 
         # Create children (mutation) crossover later?
         #   Tournament selection (save 1 for elite-copy)
-        parentCandidateIDs = np.random.randint(populationSize - 1, high=None, size=[populationSize,2])
+        parentCandidateIDs = np.random.randint(populationSize - 1, high=None, size=[populationSize*2,2])
         tournament = np.take(errors, parentCandidateIDs)
         parentIDs = []
         for i in range(tournament.shape[0]):
@@ -181,16 +198,14 @@ if __name__ == "__main__":
                 parentIDs.append(parentCandidateIDs[i,1])
 
         #   Mutate parents
-        children = generateOffspring(population[parentIDs])
+        children = generateOffspring(population[parentIDs], errors[parentIDs], recombinationThreshold)
         population = newpopulation + children
 
-        # logger = "output_dir/"+ filename + "/log-PPA-" + str(strokeCount) + "-" + str((i+1)*populationSize) + "-" + today
-        # logger = logger + "-v" + str(len(glob.glob(logger)))
-        # f = open(logger, "w")
+        writeTolog(f, i*populationSize, errors[0])
+        f.flush()
+        sys.stdout.flush()
         #     start = time.time()
         #     # loggingx
         #     writeTolog(f, evalCount, population[0].current_error, len(offspring), countedStrokes, population[0].mutateCount, population[0].cycles_alive)
 
         #     end = time.time()
-        #     f.flush()
-        #     sys.stdout.flush()
