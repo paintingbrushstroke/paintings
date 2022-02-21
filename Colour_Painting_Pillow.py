@@ -5,10 +5,11 @@ import copy
 import time
 import math
 from PIL import Image, ImageChops
+from skimage.metrics import structural_similarity as ssim
 
 class Painting:
 
-    def __init__(self, img_path, oldMutation, mutationStrength):
+    def __init__(self, img_path, oldMutation, palette=None):
         self.original_img = Image.open(img_path)
         self.img_grey = self.original_img.convert("L")
 
@@ -18,10 +19,10 @@ class Painting:
 
         # Stroke boundaries
         self.bound = self.img_grey.size
-        self.minSize = 0.1
-        self.maxSize = 0.7
+        self.minSize = 0.3  # 0.03  # 0.1
+        self.maxSize = 0.7  # 0.7  # 0.7
         self.brushSize = 300  # brush image resolution in pixels
-        self.padding = int(self.brushSize*self.maxSize / 2 + 200)
+        self.padding = int(self.brushSize*self.maxSize / 2 + 150)
 
         # Strokes and current painting
         self.strokes = []
@@ -30,7 +31,6 @@ class Painting:
 
         # Mutation properties
         self.oldMutation = oldMutation
-        self.mutationStrength = mutationStrength
 
         # PPA properties
         self.fitness = None
@@ -43,11 +43,14 @@ class Painting:
         self.current_best_error = self.bound[0] * self.bound[1] * 255
         self.current_best_canvas = []
 
+        # INIT properties
+        self.palette = palette
+
     # Initialize the random brush strokes for a stroke count
     def init_strokes(self, stroke_count):
         for index in range(0, stroke_count):
             brush = Brush_stroke()
-            brush.randomAttributes(self.minSize, self.maxSize, self.maxBrushNumber, self.bound)
+            brush.randomAttributes(self.minSize, self.maxSize, self.maxBrushNumber, self.bound, self.palette)
             self.strokes.append(brush)
 
     def preload_brushes(self, path, maxBrushNumber):
@@ -76,7 +79,7 @@ class Painting:
                 # print(i, ". new best:", self.current_error)
                 f.write(str(i+1) + "," + str(self.current_error) + "\n")
 
-    def mutate(self):
+    def mutate(self, mutSigma):
         # copy strokes and stroke object to make reverting possible
         copyStrokes = copy.deepcopy(self.strokes)
         # mutatedStroke = random.choice(copyStrokes)
@@ -97,27 +100,27 @@ class Painting:
         # mutate color
         elif mutateOption == 1:
             if self.oldMutation:
-                mutatedStroke.color = mutatedStroke.new_color()
+                mutatedStroke.color, mutatedStroke.colorID= mutatedStroke.new_color(self.palette)
             else:
-                mutatedStroke.color = mutatedStroke.mut_color(mutatedStroke.color, self.mutationStrength)
+                mutatedStroke.color, mutatedStroke.colorID = mutatedStroke.mut_color(mutatedStroke.color, mutatedStroke.colorID, self.palette, mutSigma)
         # mutate size
         elif mutateOption == 2:
             if self.oldMutation:
                 mutatedStroke.size = mutatedStroke.new_size(self.minSize, self.maxSize)
             else:
-                mutatedStroke.size = mutatedStroke.mut_size(self.minSize, self.maxSize, mutatedStroke.size, self.mutationStrength)
+                mutatedStroke.size = mutatedStroke.mut_size(self.minSize, self.maxSize, mutatedStroke.size, mutSigma)
         # mutate position
         elif mutateOption == 3:
             if self.oldMutation:
                 mutatedStroke.posX, mutatedStroke.posY = mutatedStroke.gen_new_positions(self.bound)
             else:
-                mutatedStroke.posX, mutatedStroke.posY = mutatedStroke.mut_positions(self.bound, self.padding, [mutatedStroke.posY, mutatedStroke.posX], self.mutationStrength, mutatedStroke.size)
+                mutatedStroke.posX, mutatedStroke.posY = mutatedStroke.mut_positions(self.bound, self.padding, [mutatedStroke.posY, mutatedStroke.posX], mutatedStroke.size, mutSigma)
         # mutate rotation
         elif mutateOption == 4:
             if self.oldMutation:
                 mutatedStroke.rotation = mutatedStroke.new_rotation()
             else:
-                mutatedStroke.rotation = mutatedStroke.mut_rotation(mutatedStroke.rotation, self.mutationStrength)
+                mutatedStroke.rotation = mutatedStroke.mut_rotation(mutatedStroke.rotation, mutSigma)
         # mutate brush type
         elif mutateOption == 5:
             mutatedStroke.brush_type = mutatedStroke.new_brush_type(self.maxBrushNumber)
@@ -129,7 +132,19 @@ class Painting:
         myImg = self.draw(newStrokes)
 
         error = self.mse(self.original_img, myImg)
+        # error = self.ssim(self.original_img, myImg)
         return (error, myImg)
+
+    def calcErrorForParpool(self, newStrokes, i):
+        myImg = self.draw(newStrokes)
+
+        error = self.mse(self.original_img, myImg)
+        # error = self.ssim(self.original_img, myImg)
+        return (error, myImg, i)
+
+    def ssim(self, imageA, imageB):
+        err = 1.0 - ssim(np.array(imageA).astype(float), np.array(imageB).astype(float), multichannel=True)
+        return err
 
     def mse(self, imageA, imageB):
         # the 'Mean Squared Error' between the two images is the
@@ -157,12 +172,12 @@ class Painting:
         return inImg
 
     def __drawStroke(self, stroke, inImg):
+        resample = Image.NEAREST  # Image.BICUBIC
         # get stroke data
         color = stroke.color
         padding = self.padding # int(self.padding*stroke.size / 2 + 5)
         posX = int(stroke.posX) + padding  # add padding since indices have shifted
         posY = int(stroke.posY) + padding
-        # print(str(posX) + " " + str(posY))
         size = stroke.size
         rotation = stroke.rotation
         brushNumber = int(stroke.brush_type)
@@ -170,9 +185,9 @@ class Painting:
         # load brush alpha
         brushImg = self.brushes[brushNumber]
         # resize the brush
-        brushImg = brushImg.resize((math.ceil(brushImg.size[0]*size),math.ceil(brushImg.size[1]*size)), resample=Image.BICUBIC, box=None, reducing_gap=1.01)
+        brushImg = brushImg.resize((math.ceil(brushImg.size[0]*size),math.ceil(brushImg.size[1]*size)), resample=resample, box=None, reducing_gap=1.01)
         # rotate
-        brushImg = brushImg.rotate(rotation)
+        brushImg = brushImg.rotate(rotation, resample=resample, expand=True)
 
         # create a colored canvas
         rows, cols = brushImg.size
@@ -224,16 +239,21 @@ class Brush_stroke:
         self.rotation = 0
         self.brush_type = 1
 
-    def new_color(self):
-        new_color = [random.randrange(0, 255),random.randrange(0, 255),random.randrange(0, 255)]
-        return new_color
+    def new_color(self, palette):
+        if palette is None:
+            colorID = None
+            new_color = [random.randrange(0, 255),random.randrange(0, 255),random.randrange(0, 255)]
+        else:
+            colorID = random.randrange(0, len(palette))
+            new_color = list(palette[colorID])
+        return new_color, colorID
 
     def new_size(self, minSize, maxSize):
         new_size = random.random()*(maxSize-minSize) + minSize
         return new_size
 
     def new_rotation(self):
-        new_rotation = random.randrange(-180, 180)
+        new_rotation = random.randrange(0, 360)
         return new_rotation
 
     def new_brush_type(self, maxBrushNumber):
@@ -246,30 +266,42 @@ class Brush_stroke:
         posY = random.randint(0, bound[1])
         return [posX, posY]
 
-    def mut_color(self, color, mutationStrength):
-        new_color = color
-        mu = 0
-        sigma = mutationStrength * 255
-        new_color[0] += math.ceil(np.random.normal(mu, sigma))
-        new_color[1] += math.ceil(np.random.normal(mu, sigma))
-        new_color[2] += math.ceil(np.random.normal(mu, sigma))
-        if new_color[0] < 0:
-            new_color[0] = 0
-        if new_color[1] < 0:
-            new_color[1] = 0
-        if new_color[2] < 0:
-            new_color[2] = 0
-        if new_color[0] > 255:
-            new_color[0] = 255
-        if new_color[1] > 255:
-            new_color[1] = 255
-        if new_color[2] > 255:
-            new_color[2] = 255
-        return new_color
+    def mut_color(self, color, colorID, palette, mutSigma):
+        usePalette = True
+        if palette is None or not usePalette:
+            new_color = color
+            mu = 0
+            sigma = mutSigma * 255
+            new_color[0] += math.ceil(np.random.normal(mu, sigma))
+            new_color[1] += math.ceil(np.random.normal(mu, sigma))
+            new_color[2] += math.ceil(np.random.normal(mu, sigma))
+            if new_color[0] < 0:
+                new_color[0] = 0
+            if new_color[1] < 0:
+                new_color[1] = 0
+            if new_color[2] < 0:
+                new_color[2] = 0
+            if new_color[0] > 255:
+                new_color[0] = 255
+            if new_color[1] > 255:
+                new_color[1] = 255
+            if new_color[2] > 255:
+                new_color[2] = 255
+        else:
+            sigma = mutSigma*len(palette)
+            IDtranslation = int(np.random.normal(0, sigma))
+            # colorID = random.randrange(0, len(palette))
+            colorID += IDtranslation
+            if colorID > (len(palette)-1):
+                colorID = len(palette)-1
+            elif colorID < 0:
+                colorID = 0
+            new_color = list(palette[colorID])
+        return new_color, colorID
 
-    def mut_size(self, minSize, maxSize, size, mutationStrength):
+    def mut_size(self, minSize, maxSize, size, mutSigma):
         mu = 0
-        sigma = mutationStrength*(maxSize-minSize)
+        sigma = mutSigma*(maxSize-minSize)
         mutation = np.random.normal(mu, sigma)
         new_size = size + mutation
         if new_size > maxSize:
@@ -278,21 +310,25 @@ class Brush_stroke:
             new_size = minSize
         return new_size
 
-    def mut_rotation(self, rotation, mutationStrength):
+    def mut_rotation(self, rotation, mutSigma):
         mu = 0
-        sigma = mutationStrength * 360
+        sigma = mutSigma * 360
         mutation = np.random.normal(mu, sigma)
         rotation += mutation
+        if rotation > 360:
+            rotation = rotation - 360
+        if rotation < 0:
+            rotation = 360 + rotation
         return rotation
 
     def mut_brush_type(self, maxBrushNumber):
         new_brush_type = random.randrange(1, maxBrushNumber)
         return new_brush_type
 
-    def mut_positions(self, bound, padding, position, mutationStrength, thisSize):
+    def mut_positions(self, bound, padding, position, thisSize, mutSigma):
         mu = 0
-        position[0] = position[0]+np.random.normal(mu, mutationStrength * bound[0])
-        position[1] = position[1]+np.random.normal(mu, mutationStrength * bound[1])
+        position[0] = position[0]+np.random.normal(mu, mutSigma * bound[0])
+        position[1] = position[1]+np.random.normal(mu, mutSigma * bound[1])
         extrapadding = 100
         if position[0] < -extrapadding:
             position[0] = bound[0]+extrapadding
@@ -304,8 +340,8 @@ class Brush_stroke:
             position[1] = -extrapadding
         return position
 
-    def randomAttributes(self, minSize, maxSize, maxBrushNumber, bound):
-        self.color = self.new_color()
+    def randomAttributes(self, minSize, maxSize, maxBrushNumber, bound, palette):
+        self.color, self.colorID = self.new_color(palette)
         self.size = self.new_size(minSize, maxSize)
         self.posX, self.posY = self.gen_new_positions(bound)
         self.rotation = self.new_rotation()

@@ -3,21 +3,21 @@ import math
 import random
 import copy
 import time
-from collections import Counter
 import sys
-import pickle
 import argparse
 import glob
 from datetime import datetime
 
 from colorthief import ColorThief
+from PIL import ImageDraw
+from multiprocessing import Process, Queue, current_process, freeze_support
 
-def initPopulation(populationSize, strokeCount, imagePath, mutationStrength):
+def initPopulation(populationSize, strokeCount, imagePath, palette):
     # initialize population
     population = []
-    initStrokes = []
+    # initStrokes = []
     for i in range(populationSize):
-        individual = Painting(imagePath, False, mutationStrength)
+        individual = Painting(imagePath, False, palette)
         individual.init_strokes(strokeCount)
         # initStrokes.append(individual.strokes)
         population.append(individual)
@@ -25,26 +25,53 @@ def initPopulation(populationSize, strokeCount, imagePath, mutationStrength):
     return population
 
 
-def calcPopulationMSEPAR(population):
-    # calculate MSE for the entire population
-    errors = []
-    imgs = []
+def worker(input, output):
+    for func, args in iter(input.get, 'STOP'):
+        result = calculate(func, args)
+        output.put(result)
+
+def calculate(func, args):
+    result = func(*args)
+    #return '%s says that %s%s = %s' % \
+    #    (current_process().name, func.__name__, args, result)
+    return result
+
+def calcPopulationMSEPAR(population, task_queue, done_queue):
+    # calculate MSE for the entire population (parallel execution)
+    # errors = []
+    # imgs = []
+    # for i in range(len(population)):
+    #     error, img = population[i].calcError(population[i].strokes)
+    #     errors.append(error)
+    #     imgs.append(img)
+    #     population[i].current_error = errors[i]
+    #     population[i].current_pheno = img
+
+    NUMBER_OF_PROCESSES = len(population)
+    TASKS1 = [(population[0].calcErrorForParpool, (population[i].strokes, i)) for i in range(len(population))]
+
+    # Submit tasks
+    for task in TASKS1:
+        task_queue.put(task)
+
+    # Start worker processes
+    for i in range(NUMBER_OF_PROCESSES):
+        Process(target=worker, args=(task_queue, done_queue)).start()
+
+    # Get and print results
+    errors = [None]*len(TASKS1)
+    imgs = [None]*len(TASKS1)
+    for i in range(len(TASKS1)):
+        res = done_queue.get()
+        errors[res[2]] = res[0]
+        imgs[res[2]] = res[1]
+
+    for i in range(NUMBER_OF_PROCESSES):
+        task_queue.put('STOP')
+
     for i in range(len(population)):
-        error, img = population[i].calcError(population[i].strokes)
-        errors.append(error)
-        imgs.append(img)
         population[i].current_error = errors[i]
-        population[i].current_pheno = img
-
-    process_list = []
-    nProc = 4
-    for i in range(nProc):
-        p = multiprocessing.Process(target=population[i].calcError, args=[population[i].strokes])
-        p.start()
-        process_list.append(p)
-
-    for process in process_list:
-        process.join()
+        population[i].current_pheno = imgs[i]
 
     return errors, population
 
@@ -57,73 +84,58 @@ def calcPopulationMSE(population):
         error, img = population[i].calcError(population[i].strokes)
         errors.append(error)
         imgs.append(img)
-        population[i].current_error = errors[i]
-        population[i].current_pheno = imgs[i]
+        population[i].current_error = error
+        population[i].current_pheno = img
 
     return errors, population
 
-def sortPopulation(population, fitnessList, populationSize):
-    # Sort list by fitness score
-    sortedFitnessList = Sort(fitnessList)
 
-    sortedPopulation = []
-
-    # loop over the sorted fitness list and extract the correct indiviual from the population to sort the population
-    for idx, _ in sortedFitnessList:
-        # Add one to cycle alive count, to see how long the best indiviual stays alive
-        population[idx].cycles_alive = population[idx].cycles_alive + 1
-        sortedPopulation.append(population[idx])
-
-    # set the sorted population as the true population and return the population to its original size.
-    return sortedPopulation[:populationSize]
-
-
-def Sort(list):
-    list.sort(reverse=True, key=lambda x: x[1])
-    return list
-
-
-def generateOffspring(parents, errors, recombinationThreshold):
+def generateOffspring(parents, errors, mutPerc, mutationStrength, recombinationThreshold):
     # generate offspring per indidivual of the population
     children = []
-    offSpringCount = int(len(parents)/2) - 1
+    nMutations = int(mutPerc*len(parents[0].strokes))
+    offSpringCount = int(len(parents)/2)
     for offspring in range(offSpringCount):
         # Recombination
-        parentA = copy.deepcopy(parents[offspring])
-        parentB = copy.deepcopy(parents[offspring+offSpringCount])
+        parentA = parents[offspring]
+        parentB = parents[offspring+offSpringCount]
         errorA = errors[offspring]
         errorB = errors[offspring+offSpringCount]
         newChild = copy.deepcopy(parentA)
-        for strokeID in range(len(parentA.strokes)):
-            randNr = random.uniform(0.0, 1.0)
-            if randNr < recombinationThreshold and errorA < errorB:
-                selectGene = parentA.strokes[strokeID]
-            elif randNr > recombinationThreshold and errorA > errorB:
-                selectGene = parentA.strokes[strokeID]
-            else:
-                selectGene = parentB.strokes[strokeID]
-            newChild.strokes[strokeID] = selectGene
+        if recombinationThreshold is not None:
+            for strokeID in range(len(parentA.strokes)):
+                randNr = random.random()
+                if randNr < recombinationThreshold:
+                    if errorA > errorB:
+                        newChild.strokes[strokeID] = copy.deepcopy(parentB.strokes[strokeID])
+                else:
+                    if errorA <= errorB:
+                        newChild.strokes[strokeID] = copy.deepcopy(parentB.strokes[strokeID])
 
         # Mutation
-        newChild.strokes = newChild.mutate()
+        for i in range(nMutations):
+            newChild.strokes = newChild.mutate(mutationStrength)
         children.append(newChild)
 
     return children
 
-def assignColor(population, palette):
-    for i in range(len(population)):
-        for j in range(len(population[i].strokes)):
-            population[i].strokes[j].color = list(palette[j])
 
-    return population
-
-def strokeAnalyze(individual):
-    strokeTypes = []
-    for stroke in individual.strokes:
-        strokeTypes.append(stroke.brush_type)
-    countedStrokes = Counter(strokeTypes)
-
-    return countedStrokes
+def getConcatenation(images):
+    count = sum(1 for e in images if e)
+    if count < 2:
+        print("None or only one image input for concatenation.")
+        return
+    nImageRows = int(math.sqrt(len(images)))
+    imSize = images[0].width
+    catImage = Image.new('RGBA', (imSize*nImageRows, imSize*nImageRows))
+    for num, im in enumerate(images, start=0):
+        row = int(num / nImageRows)
+        col = num % nImageRows
+        if im is None:
+            print("Image empty, replacing with blank canvas")
+            im = Image.new('RGB', (imSize, imSize))
+        catImage.paste(im, (row*imSize, col*imSize))
+    return catImage
 
 
 def writeTolog(f, evalCount, error):
@@ -160,9 +172,11 @@ if __name__ == "__main__":
 
     populationSize = 32
     strokeCount = 125
+    color_count = 32
     evaluations = 100000
-    mutationStrength = 0.1
-    recombinationThreshold = 0.6
+    mutationSigma = 0.1
+    mutPerc = 0.01
+    recombinationThreshold = 0.5 # 0.6  # 0.6  # None
 
     nGenerations = math.ceil(evaluations/populationSize) - 1  # Subtract one for initial population
     print("Number of generations: " + str(nGenerations))
@@ -176,12 +190,18 @@ if __name__ == "__main__":
     f = open(logger, "w")
 
     color_thief = ColorThief(imagePath)
-    palette = color_thief.get_palette(color_count=strokeCount+1)
-    population = initPopulation(populationSize, strokeCount, imagePath, mutationStrength)
-    population = assignColor(population, palette)
+    palette = None
+    # palette = color_thief.get_palette(color_count=color_count)
+
+    # Create queues
+    task_queue = Queue()
+    done_queue = Queue()
+
+    population = initPopulation(populationSize, strokeCount, imagePath, palette)
+
     for i in range(nGenerations):
         # Get fitness
-        errors, population = calcPopulationMSE(population)
+        errors, population = calcPopulationMSEPAR(population,task_queue,done_queue)
 
         # Sort population
         sorted = np.argsort(errors)
@@ -190,15 +210,22 @@ if __name__ == "__main__":
 
         # Elitism
         newpopulation = []
-        newpopulation.append(population[0])
-        if i%5 == 0:
-            print("# Evals: " + str(i*populationSize) + " - Gen: " + str(i) + " - Best fitness: " + str(errors[0]))
-            population[0].current_pheno.save("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
-            # cv2.imwrite("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", population[0].current_pheno)
+        newpopulation.append(copy.deepcopy(population[0]))
 
-        # Create children (mutation) crossover later?
+        # Reporting
+        if i%5 == 0:
+            print("# Evals: " + str(i*populationSize) + " - Gen: " + str(i) + " - Best error: " + str(errors[0]))
+            imgs = []
+            for m in range(len(population)):
+                img = copy.deepcopy(population[m].current_pheno)
+                draw = ImageDraw.Draw(img)
+                draw.text((0, 0),"Error: " + str(int(errors[m])),(255,255,255))  # ,font=font
+                imgs.append(img)
+            concatImage = getConcatenation(imgs)
+            concatImage.save("output_dir/" + filename + "/GA-intermediate-" + str(strokeCount) + "-" + today + ".png", "PNG")
+
         #   Tournament selection (save 1 for elite-copy)
-        parentCandidateIDs = np.random.randint(populationSize - 1, high=None, size=[populationSize*2,2])
+        parentCandidateIDs = np.random.randint(populationSize, high=None, size=[(populationSize-1)*2,2])
         tournament = np.take(errors, parentCandidateIDs)
         parentIDs = []
         for i in range(tournament.shape[0]):
@@ -207,8 +234,7 @@ if __name__ == "__main__":
             else:
                 parentIDs.append(parentCandidateIDs[i,1])
 
-        #   Mutate parents
-        children = generateOffspring(population[parentIDs], errors[parentIDs], recombinationThreshold)
+        children = generateOffspring(population[parentIDs], errors[parentIDs], mutPerc, mutationSigma, recombinationThreshold)
         population = newpopulation + children
 
         writeTolog(f, i*populationSize, errors[0])

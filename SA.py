@@ -11,7 +11,7 @@ import time
 import cProfile
 
 
-def simulated_annealing(painting, evaluations, filename):
+def simulated_annealing(painting, evaluations, filename, mutSigma):
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
     today = str(dt_string)
@@ -19,7 +19,7 @@ def simulated_annealing(painting, evaluations, filename):
     logger  = "output_dir/"+filename+"/log-SA-" + str(len(painting.strokes))+ "-" + str(evaluations) + "-" + today
     f = open(logger, "w")
     for i in range(evaluations):
-        mutatedStrokes = painting.mutate()
+        mutatedStrokes = painting.mutate(mutSigma)
 
         # calculate error
         error, img = painting.calcError(mutatedStrokes)
@@ -52,7 +52,7 @@ def simulated_annealing(painting, evaluations, filename):
 
         # if i == 250000 or i == 0 or i == 500000 or i == 750000:
             # pickle.dump( painting, open( "output_dir/" + filename + "/SA-" + str(len(painting.strokes)) + "-"+ today+ "-" + str(i) +".p", "wb" ) )
-        if i%1000 == 0:
+        if i%100 == 0:
             painting.canvas_memory.save("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
             # cv2.imwrite("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png" , painting.canvas_memory)
 
@@ -113,21 +113,15 @@ if __name__ == "__main__":
 
     strokeCount = 125
     evaluations = 100000
-    mutationStrength = 0.1
+    mutSigma = 0.1
 
     for j in range(1):
-        canvas = Painting(imagePath, False, mutationStrength)
+        canvas = Painting(imagePath, False)
         canvas.init_strokes(strokeCount)
         strokes = canvas.strokes
 
         oldMutation = False
-        canvas = Painting(imagePath, oldMutation, mutationStrength)
+        canvas = Painting(imagePath, oldMutation)
         canvas.init_strokes(strokeCount)
         canvas.strokes = strokes
-        simulated_annealing(canvas, evaluations, filename)
-
-        oldMutation = False
-        canvas = Painting(imagePath, oldMutation, mutationStrength)
-        canvas.init_strokes(strokeCount)
-        canvas.strokes = strokes
-        simulated_annealing(canvas, evaluations, filename)
+        simulated_annealing(canvas, evaluations, filename, mutSigma)
