@@ -2,24 +2,30 @@ from Colour_Painting_Pillow import *
 from collections import Counter
 import math
 import sys
-import pickle
 import argparse
-import glob
 from datetime import datetime
-import cv2
+from colorthief import ColorThief
 import time
-import cProfile
 
 
-def simulated_annealing(painting, evaluations, filename, mutSigma):
+def simulated_annealing(imagePath, outputfolder, evaluations, strokeCount, mutationSigma, oldMutation, initColorsMedSplit, colorCount):
+
     now = datetime.now()
     dt_string = now.strftime("%Y-%m-%d_%H-%M-%S")
     today = str(dt_string)
 
-    logger  = "output_dir/"+filename+"/log-SA-" + str(len(painting.strokes))+ "-" + str(evaluations) + "-" + today
+    color_thief = ColorThief(imagePath)
+    palette = None
+    if initColorsMedSplit:
+        palette = color_thief.get_palette(color_count=colorCount)
+
+    painting = Painting(imagePath, oldMutation, palette)
+    painting.init_strokes(strokeCount)
+
+    logger  = outputfolder + "/log-SA-" + str(len(painting.strokes))+ "-" + str(evaluations) + "-" + today
     f = open(logger, "w")
     for i in range(evaluations):
-        mutatedStrokes = painting.mutate(mutSigma)
+        mutatedStrokes = painting.mutate(mutationSigma)
 
         # calculate error
         error, img = painting.calcError(mutatedStrokes)
@@ -53,12 +59,12 @@ def simulated_annealing(painting, evaluations, filename, mutSigma):
         # if i == 250000 or i == 0 or i == 500000 or i == 750000:
             # pickle.dump( painting, open( "output_dir/" + filename + "/SA-" + str(len(painting.strokes)) + "-"+ today+ "-" + str(i) +".p", "wb" ) )
         if i%100 == 0:
-            painting.canvas_memory.save("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
+            painting.canvas_memory.save(outputfolder + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
             # cv2.imwrite("output_dir/" + filename + "/SA-intermediate-" + str(len(painting.strokes)) + "-" + today + ".png" , painting.canvas_memory)
 
     # Final image
     # pickle.dump( painting, open( "output_dir/" + filename + "/SA-" + str(len(painting.strokes)) + "-"+ today+ "-final.p", "wb" ) )
-    painting.canvas_memory.save("output_dir/" + filename + "/SA-final-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
+    painting.canvas_memory.save(outputfolder + "/SA-final-" + str(len(painting.strokes)) + "-" + today + ".png", "PNG")
 
 
 def calcProb(new_error, old_error, i):
@@ -113,15 +119,10 @@ if __name__ == "__main__":
 
     strokeCount = 125
     evaluations = 100000
-    mutSigma = 0.1
+    mutationSigma = 0.1
+    colorCount = 32
+    oldMutation = False
+    initColorsMedSplit = False
 
-    for j in range(1):
-        canvas = Painting(imagePath, False)
-        canvas.init_strokes(strokeCount)
-        strokes = canvas.strokes
 
-        oldMutation = False
-        canvas = Painting(imagePath, oldMutation)
-        canvas.init_strokes(strokeCount)
-        canvas.strokes = strokes
-        simulated_annealing(canvas, evaluations, filename, mutSigma)
+    simulated_annealing(imagePath, filename, evaluations, strokeCount, mutationSigma, oldMutation, initColorsMedSplit, colorCount)

@@ -19,10 +19,10 @@ class Painting:
 
         # Stroke boundaries
         self.bound = self.img_grey.size
-        self.minSize = 0.3  # 0.03  # 0.1
-        self.maxSize = 0.7  # 0.7  # 0.7
+        self.minSize = 0.1  # 0.02 # 0.03  # 0.1
+        self.maxSize = 0.7  # 0.2 # 0.7  # 0.7
         self.brushSize = 300  # brush image resolution in pixels
-        self.padding = int(self.brushSize*self.maxSize / 2 + 150)
+        self.padding = int(self.brushSize*self.maxSize / 2 + 50)
 
         # Strokes and current painting
         self.strokes = []
@@ -175,9 +175,8 @@ class Painting:
         resample = Image.NEAREST  # Image.BICUBIC
         # get stroke data
         color = stroke.color
-        padding = self.padding # int(self.padding*stroke.size / 2 + 5)
-        posX = int(stroke.posX) + padding  # add padding since indices have shifted
-        posY = int(stroke.posY) + padding
+        posX = int(stroke.posX) + self.padding  # add padding since indices have shifted
+        posY = int(stroke.posY) + self.padding
         size = stroke.size
         rotation = stroke.rotation
         brushNumber = int(stroke.brush_type)
@@ -234,7 +233,8 @@ class Brush_stroke:
     def __init__(self):
 
         self.color = [0,0,0]
-        self.size = 0
+        self.colorID = None
+        self.size = 0.1
         self.posY, self.posX = [0,0]
         self.rotation = 0
         self.brush_type = 1
@@ -329,15 +329,23 @@ class Brush_stroke:
         mu = 0
         position[0] = position[0]+np.random.normal(mu, mutSigma * bound[0])
         position[1] = position[1]+np.random.normal(mu, mutSigma * bound[1])
-        extrapadding = 100
-        if position[0] < -extrapadding:
-            position[0] = bound[0]+extrapadding
-        elif position[0] > bound[0]+extrapadding:
-            position[0] = -extrapadding
-        if position[1] < -extrapadding:
-            position[1] = bound[1]+extrapadding
-        elif position[1] > bound[1]+extrapadding:
-            position[1] = -extrapadding
+        # extrapadding = 100
+        # if position[0] < -extrapadding:
+        #     position[0] = bound[0]+extrapadding
+        # elif position[0] > bound[0]+extrapadding:
+        #     position[0] = -extrapadding
+        # if position[1] < -extrapadding:
+        #     position[1] = bound[1]+extrapadding
+        # elif position[1] > bound[1]+extrapadding:
+        #     position[1] = -extrapadding
+        if position[0] < 0:
+            position[0] = 0
+        if position[1] < 0:
+            position[1] = 0
+        if position[0] > bound[0]:
+            position[0] = bound[0]
+        if position[1] > bound[1]:
+            position[1] = bound[1]
         return position
 
     def randomAttributes(self, minSize, maxSize, maxBrushNumber, bound, palette):

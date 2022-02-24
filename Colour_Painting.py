@@ -22,8 +22,8 @@ class Painting:
 
         # Stroke boundaries
         self.bound = self.img_grey.shape
-        self.minSize = 0.1  # 0.1 #0.3
-        self.maxSize = 0.7  # 0.3 # 0.7
+        self.minSize = 0.1  #0.3
+        self.maxSize = 0.7  # 0.7
         self.brushSide = 300  # brush image resolution in pixels
         self.padding = int(self.brushSide*self.maxSize / 2 + 5)
 
