@@ -10,27 +10,31 @@ import time
 
 class Painting:
 
-    def __init__(self, img_path):
+    def __init__(self, img_path, oldMutation, mutationStrength):
         self.original_img = cv2.imread(img_path)
 
         self.img_grey = cv2.cvtColor(self.original_img,cv2.COLOR_BGR2GRAY)
-        self.img_grads = self._imgGradient(self.img_grey)
+        # self.img_grads = self._imgGradient(self.img_grey)
 
-        #Load brushes
-        self.maxBrushNumber = 5
+        # Load brushes
+        self.maxBrushNumber = 4
         self.brushes = self.preload_brushes('brushes/watercolor/', self.maxBrushNumber)
 
-        #Stroke boundaries
+        # Stroke boundaries
         self.bound = self.img_grey.shape
-        self.minSize = 0.1 #0.1 #0.3
-        self.maxSize = 0.7 #0.3 # 0.7
-        self.brushSide = 300 #brush image resolution in pixels
+        self.minSize = 0.1  #0.3
+        self.maxSize = 0.7  # 0.7
+        self.brushSide = 300  # brush image resolution in pixels
         self.padding = int(self.brushSide*self.maxSize / 2 + 5)
-        
+
         # Strokes and current painting
         self.strokes = []
         self.canvas_memory = []
         self.current_error = self.bound[0] * self.bound[1] * 255
+
+        # Mutation properties
+        self.oldMutation = oldMutation
+        self.mutationStrength = mutationStrength
 
         # PPA properties
         self.fitness = None
@@ -39,7 +43,7 @@ class Painting:
         self.mutateCount = 1
         self.cycles_alive = 0
 
-        #SA properties
+        # SA properties
         self.current_best_error = self.bound[0] * self.bound[1] * 255
         self.current_best_canvas = []
 
@@ -53,24 +57,23 @@ class Painting:
     def preload_brushes(self, path, maxBrushNumber):
         imgs = []
         for i in range(maxBrushNumber):
-            imgs.append(cv2.imread(path + str(i) +'.jpg'))
+            imgs.append(cv2.imread(path + str(i+1) +'.jpg'))
             # imgs.append(cv2.imread(path + str(i) +'.jpg'))
         return imgs
 
-
-    def _imgGradient(self, img):
-        #convert to 0 to 1 float representation
-        img = np.float32(img) / 255.0 
-        # Calculate gradient 
-        gx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=1)
-        gy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=1)
-        # Python Calculate gradient magnitude and direction ( in degrees ) 
-        mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
-        #normalize magnitudes
-        mag /= np.max(mag)
-        #lower contrast
-        mag = np.power(mag, 0.3)
-        return mag, angle
+    # def _imgGradient(self, img):
+    #    # convert to 0 to 1 float representation
+    #    img = np.float32(img) / 255.0
+    #    # Calculate gradient
+    #    gx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=1)
+    #    gy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=1)
+    #    # Python Calculate gradient magnitude and direction (in degrees)
+    #    mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
+    #    # normalize magnitudes
+    #    mag /= np.max(mag)
+    #    # lower contrast
+    #    mag = np.power(mag, 0.3)
+    #    return mag, angle
 
     def evolve_strokes(self, evaluations, filename):
         logger  = "log-" + filename + "-" + str(len(self.strokes)) + "-" + str(evaluations)
@@ -89,10 +92,6 @@ class Painting:
                 # print(i, ". new best:", self.current_error)
                 f.write(str(i+1) + "," + str(self.current_error) + "\n")
 
-            # output image every 100.000
-            # if i%3000 == 0 or i == 0:
-            #     cv2.imwrite(filename + "-" + str(len(self.strokes)) + "-" + str(i) + ".png" , self.canvas_memory[-1])
-
     def mutate(self):
         # copy strokes and stroke object to make reverting possible
         copyStrokes = copy.deepcopy(self.strokes)
@@ -104,7 +103,7 @@ class Painting:
         if mutateOption == 0:
             # remove swapped brushStroke form strokes
             copyStrokes.pop(mutatedStroke.index)
-    
+
             # select random number for the insert
             insertIndex = int(random.randrange(0, len(copyStrokes)))
             copyStrokes.insert(insertIndex, mutatedStroke)
@@ -115,21 +114,33 @@ class Painting:
 
         # mutate color
         elif mutateOption == 1:
-            mutatedStroke.color = mutatedStroke.new_color()
+            if self.oldMutation:
+                mutatedStroke.color = mutatedStroke.new_color()
+            else:
+                mutatedStroke.color = mutatedStroke.mut_color(mutatedStroke.color, self.mutationStrength)
         # mutate size
         elif mutateOption == 2:
-            mutatedStroke.size = mutatedStroke.new_size(self.minSize, self.maxSize)
+            if self.oldMutation:
+                mutatedStroke.size = mutatedStroke.new_size(self.minSize, self.maxSize)
+            else:
+                mutatedStroke.size = mutatedStroke.mut_size(self.minSize, self.maxSize, mutatedStroke.size, self.mutationStrength)
         # mutate position
         elif mutateOption == 3:
-            mutatedStroke.posY, mutatedStroke.posX = mutatedStroke.gen_new_positions(self.bound)
+            if self.oldMutation:
+                mutatedStroke.posY, mutatedStroke.posX = mutatedStroke.gen_new_positions(self.bound)
+            else:
+                mutatedStroke.posY, mutatedStroke.posX = mutatedStroke.mut_positions(self.bound, [mutatedStroke.posY, mutatedStroke.posX], self.mutationStrength)
         # mutate rotation
         elif mutateOption == 4:
-            mutatedStroke.rotation = mutatedStroke.new_rotation()
+            if self.oldMutation:
+                mutatedStroke.rotation = mutatedStroke.new_rotation()
+            else:
+                mutatedStroke.rotation = mutatedStroke.mut_rotation(mutatedStroke.rotation, self.mutationStrength)
         # mutate brush type
         elif mutateOption == 5:
             mutatedStroke.brush_type = mutatedStroke.new_brush_type(self.maxBrushNumber)
 
-        return copyStrokes      
+        return copyStrokes
 
     # Draw all strokes and calculate the error between the strokes and real img
     def calcError(self, newStrokes):
@@ -143,91 +154,92 @@ class Painting:
         # the 'Mean Squared Error' between the two images is the
         # sum of the squared difference between the two images;
         # NOTE: the two images must have the same dimension
-        err = np.sum((imageA.astype("float") - imageB.astype("float")) ** 2)
+        # print("===")
+        err = np.sum((imageA.astype(float) - imageB.astype(float)) ** 2)
+        # print(err)
+        # err = np.sum((imageA - imageB) ** 2)
+        # print(err)
         err /= float(imageA.shape[0] * imageA.shape[1])
-        
+
         # return the MSE, the lower the error, the more "similar"
         # the two images are
-        return err      
-        
+        return err
+
     def draw(self, newStrokes):
         myImg = self.drawAll(newStrokes)
         return myImg
-        
+
     def drawAll(self, strokes):
-        #set image to pre generated
+        # set image to pre generated
         inImg = np.zeros((self.bound[0], self.bound[1], 3), np.uint8)
 
-        #apply padding
+        # apply padding
         p = self.padding
         inImg = cv2.copyMakeBorder(inImg, p,p,p,p,cv2.BORDER_CONSTANT,value=[0,0,0])
-        #draw every all brush strokes
+        # draw every all brush strokes
         for i in range(len(strokes)):
             inImg = self.__drawStroke(strokes[i], inImg)
-        #remove padding
+        # remove padding
         y = inImg.shape[0]
         x = inImg.shape[1]
-        return inImg[p:(y-p), p:(x-p)]       
-        
+        return inImg[p:(y-p), p:(x-p)]
+
     def __drawStroke(self, stroke, inImg):
-        #get stroke data
+        # get stroke data
         color = stroke.color
-        posX = int(stroke.posX) + self.padding #add padding since indices have shifted
+        posX = int(stroke.posX) + self.padding  # add padding since indices have shifted
         posY = int(stroke.posY) + self.padding
         size = stroke.size
         rotation = stroke.rotation
         brushNumber = int(stroke.brush_type)
 
-        #load brush alpha
+        # load brush alpha
         brushImg = self.brushes[brushNumber]
-        #resize the brush
-        brushImg = cv2.resize(brushImg,None,fx=size, fy=size, interpolation = cv2.INTER_CUBIC)
-        #rotate
+        # resize the brush
+        brushImg = cv2.resize(brushImg,None,fx=size, fy=size, interpolation=cv2.INTER_CUBIC)
+        # rotate
         brushImg = self.__rotateImg(brushImg, rotation)
-        #brush img data
+        # brush img data
         rows, cols, _ = brushImg.shape
-        
-        #create a colored canvas
-        myClr = np.full((rows, cols,3), color)
-        # myClr[:, :] = color
 
-        #find ROI
+        # create a colored canvas
+        myClr = np.full((rows, cols,3), color)
+
+        # find ROI
         inImg_rows, inImg_cols, _ = inImg.shape
         y_min = int(posY - rows/2)
         y_max = int(posY + (rows - rows/2))
         x_min = int(posX - cols/2)
         x_max = int(posX + (cols - cols/2))
-        
+
         # Convert uint8 to float
         foreground = myClr[0:rows, 0:cols].astype(float)
-        
-        background = inImg[y_min:y_max,x_min:x_max].astype(float) #get ROI
+
+        background = inImg[y_min:y_max,x_min:x_max].astype(float)  # get ROI
         # Normalize the alpha mask to keep intensity between 0 and 1
         alpha = brushImg.astype(float)/255.0
 
         try:
             # Multiply the foreground with the alpha matte
             foreground = cv2.multiply(alpha, foreground)
-            
-            
+
             # Multiply the background with ( 1 - alpha )
             background = cv2.multiply(np.clip((1.0 - alpha), 0.0, 1.0), background)
             # Add the masked foreground and background.
             outImage = (np.clip(cv2.add(foreground, background), 0.0, 255.0)).astype(np.uint8)
 
-            
             inImg[y_min:y_max, x_min:x_max] = outImage
-        except:
+        except(Exception):
             print('------ \n', 'in image ',inImg.shape)
             print('pivot: ', posY, posX)
             print('brush size: ', self.brushSide)
             print('brush shape: ', brushImg.shape)
-            print(" Y range: ", rangeY, 'X range: ', rangeX)
-            print('bg coord: ', posY, posY+rangeY, posX, posX+rangeX)
+            # print(" Y range: ", rangeY, 'X range: ', rangeX)
+            # print('bg coord: ', posY, posY+rangeY, posX, posX+rangeX)
             print('fg: ', foreground.shape)
             print('bg: ', background.shape)
             print('alpha: ', alpha.shape)
-        
+
         return inImg
 
     def __rotateImg(self, img, angle):
@@ -235,11 +247,10 @@ class Painting:
         M = cv2.getRotationMatrix2D((cols/2,rows/2),angle,1)
         dst = cv2.warpAffine(img,M,(cols,rows))
         return dst
-    
-class Brush_stroke:
-     
-    def __init__(self, index):
 
+class Brush_stroke:
+
+    def __init__(self, index):
 
         self.index = index
         self.color = [0,0,0]
@@ -255,21 +266,81 @@ class Brush_stroke:
     def new_size(self, minSize, maxSize):
         new_size = random.random()*(maxSize-minSize) + minSize
         return new_size
-    
+
     def new_rotation(self):
         new_rotation = random.randrange(-180, 180)
         return new_rotation
-    
+
     def new_brush_type(self, maxBrushNumber):
         new_brush_type = random.randrange(1, maxBrushNumber)
         return new_brush_type
-
 
     # generate new brush positions for the brush
     def gen_new_positions(self, bound):
         posY = int(random.randrange(0, bound[0]))
         posX = int(random.randrange(0, bound[1]))
         return [posY, posX]
+
+    def mut_color(self, color, mutationStrength):
+        new_color = color
+        mu = 0
+        sigma = mutationStrength * 255
+        new_color[0] += np.random.normal(mu, sigma)
+        new_color[1] += np.random.normal(mu, sigma)
+        new_color[2] += np.random.normal(mu, sigma)
+        if new_color[0] < 0:
+            new_color[0] = 0
+        if new_color[1] < 0:
+            new_color[1] = 0
+        if new_color[2] < 0:
+            new_color[2] = 0
+        if new_color[0] > 255:
+            new_color[0] = 255
+        if new_color[1] > 255:
+            new_color[1] = 255
+        if new_color[2] > 255:
+            new_color[2] = 255
+        return new_color
+
+    def mut_size(self, minSize, maxSize, size, mutationStrength):
+        mu = 0
+        sigma = mutationStrength*(maxSize-minSize)
+        mutation = np.random.normal(mu, sigma)
+        new_size = size + mutation
+        if new_size > maxSize:
+            new_size = maxSize
+        if new_size < minSize:
+            new_size = minSize
+        return new_size
+
+    def mut_rotation(self, rotation, mutationStrength):
+        mu = 0
+        sigma = mutationStrength * 360
+        mutation = np.random.normal(mu, sigma)
+        rotation += mutation
+        if rotation < -180:
+            rotation = -180
+        if rotation > 180:
+            rotation = 180
+        return rotation
+
+    def mut_brush_type(self, maxBrushNumber):
+        new_brush_type = random.randrange(1, maxBrushNumber)
+        return new_brush_type
+
+    def mut_positions(self, bound, position, mutationStrength):
+        mu = 0
+        position[0] = position[0]+np.random.normal(mu, mutationStrength * bound[0])
+        position[1] = position[1]+np.random.normal(mu, mutationStrength * bound[1])
+        if position[0] < 0:
+            position[0] = 0
+        if position[1] < 0:
+            position[1] = 0
+        if position[0] > bound[0]:
+            position[0] = bound[0]
+        if position[1] > bound[1]:
+            position[1] = bound[1]
+        return position
 
     def randomAttributes(self, minSize, maxSize, maxBrushNumber, bound):
         #random color
